@@ -15,17 +15,18 @@ PROJECT_ROOT = Path(__file__).parent
 
 # 阿里云 DashScope API Key - 需要用户自行填写
 # 申请地址: https://dashscope.console.aliyun.com/
-DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "your-api-key-here")
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "sk-2b4319a2015a460497ef9d47c38057e2")
 
 # 模型选择: qwen-turbo (快速) / qwen-plus (更强)
 MODEL_NAME = "qwen-plus"
 
 # 指定联系人列表（好友名称，精确匹配）
 CONTACTS = [
-    "张三",
-    "李四",
-    "王五",
-    # 在此添加更多联系人
+    "王思乃",
+    "文艺",
+    "妈妈",
+    "夏瑶",
+    "胡明灿",
 ]
 
 # 消息检查间隔（秒）
