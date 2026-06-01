@@ -4,10 +4,11 @@
 """
 
 import sys
-import asyncio
+import time
+import wxauto
 from config import load_config, get_contacts
 from wechat_listener import WeChatListener
-from claude_replier import generate_reply
+from claude_replier import generate_reply_sync
 
 
 class AutoReplier:
@@ -23,7 +24,7 @@ class AutoReplier:
 
         # 调用 Claude API 生成回复
         try:
-            reply = asyncio.run(generate_reply(message))
+            reply = generate_reply_sync(message)
             print(f"生成回复: {reply}")
 
             # 发送回复
@@ -36,7 +37,6 @@ class AutoReplier:
 
     def _send_reply(self, sender: str, reply: str):
         """发送回复（需要微信客户端保持运行）"""
-        import wxauto
         wx = wxauto.WeChat()
         wx.SendMsg(reply, to=sender)
 
@@ -53,7 +53,6 @@ class AutoReplier:
 
         try:
             while True:
-                import time
                 time.sleep(1)
         except KeyboardInterrupt:
             print("\n正在停止...")
