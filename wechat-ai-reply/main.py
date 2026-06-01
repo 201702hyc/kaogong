@@ -5,7 +5,6 @@
 
 import sys
 import time
-import wxauto
 from config import load_config, get_contacts
 from wechat_listener import WeChatListener
 from claude_replier import generate_reply_sync
@@ -22,7 +21,7 @@ class AutoReplier:
         """处理收到的消息"""
         print(f"\n收到消息 from {sender}: {message}")
 
-        # 调用 Claude API 生成回复
+        # 调用通义千问 API 生成回复
         try:
             reply = generate_reply_sync(message)
             print(f"生成回复: {reply}")
@@ -36,9 +35,9 @@ class AutoReplier:
             print(f"生成回复失败: {e}")
 
     def _send_reply(self, sender: str, reply: str):
-        """发送回复（需要微信客户端保持运行）"""
-        wx = wxauto.WeChat()
-        wx.SendMsg(reply, to=sender)
+        """发送回复（通过 pywinauto）"""
+        # 监听器已有 send_message 方法
+        self.listener.send_message(reply)
 
     def run(self):
         """启动自动回复"""
