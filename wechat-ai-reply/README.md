@@ -14,12 +14,14 @@
 pip install -r requirements.txt
 ```
 
+**注意**：如果 pywinauto 安装失败，可能需要额外安装 Microsoft UI Automation 支持。
+
 ## 配置
 
 编辑 `config.py`，填入以下配置：
 
-1. **DashScope API Key**: 在 [阿里云 DashScope](https://dashscope.console.aliyun.com/) 获取
-2. **联系人列表**: 在 `CONTACTS` 列表中添加要自动回复的人
+1. **DashScope API Key**: 在 [阿里云 DashScope](https://dashscope.console.aliyun.com/) 获取（已配置）
+2. **联系人列表**: 在 `CONTACTS` 列表中添加要自动回复的人（已配置）
 
 ## 使用
 

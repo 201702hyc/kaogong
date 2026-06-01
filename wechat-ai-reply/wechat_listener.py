@@ -1,75 +1,157 @@
 """
 微信 AI 自动回复 - 消息监听模块
-监听微信消息，判断是否需要处理
+使用 pywinauto 进行 Windows UI 自动化
 """
 
 import logging
 import time
 import threading
-from collections import namedtuple
+from collections import deque
 from typing import Callable, Optional
 from config import get_contacts, is_contact, CHECK_INTERVAL
 
-# wxauto 导入
+# pywinauto 导入
 try:
-    import wxauto
-    WXAUTO_AVAILABLE = True
+    from pywinauto import Application, timings
+    PYWINATAU_AVAILABLE = True
 except ImportError:
-    WXAUTO_AVAILABLE = False
-
-# 消息命名元组
-WeChatMessage = namedtuple("WeChatMessage", ["sender", "content"])
+    PYWINATAU_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 
 class WeChatListener:
-    """微信消息监听器"""
+    """微信消息监听器 - 使用 pywinauto 实现"""
 
     def __init__(self, check_interval: int = CHECK_INTERVAL):
         self.check_interval = check_interval
         self._running = threading.Event()
         self._thread: Optional[threading.Thread] = None
-        self._wx = None
+        self._app = None
+        self._wechat_window = None
         self._callback: Optional[Callable] = None
         self._callback_lock = threading.Lock()
+        self._seen_messages = deque(maxlen=100)  # 记录最近处理的消息，避免重复
 
     def _init_wechat(self):
         """初始化微信客户端"""
-        if not WXAUTO_AVAILABLE:
-            raise ImportError("请先安装 wxauto: pip install wxauto")
-        self._wx = wxauto.WeChat()
+        if not PYWINATAU_AVAILABLE:
+            raise ImportError("请先安装 pywinauto: pip install pywinauto")
+
+        try:
+            # 尝试连接已运行的微信
+            self._app = Application(backend="uia").connect(title="微信", timeout=5)
+            logger.info("成功连接到微信窗口")
+        except Exception:
+            # 如果没有找到，尝试启动微信
+            try:
+                self._app = Application(backend="uia").start(r"C:\Program Files\Tencent\WeChat\WeChat.exe")
+                logger.info("已启动微信")
+            except Exception as e:
+                raise RuntimeError(f"无法连接或启动微信: {e}")
+
+        self._wechat_window = self._app.window(title="微信")
+        self._wechat_window.wait('visible', timeout=10)
+
+    def _get_friend_name(self) -> Optional[str]:
+        """获取当前聊天窗口的联系人名称"""
+        try:
+            # 微信窗口顶部标题通常就是联系人名称
+            title = self._wechat_window.window_text()
+            # 标题格式可能是 "微信 - 王思乃" 或直接是联系人名
+            if " - " in title:
+                return title.split(" - ")[-1].strip()
+            elif title != "微信":
+                return title.strip()
+        except Exception:
+            pass
+        return None
+
+    def _get_latest_messages(self) -> list:
+        """获取最新消息"""
+        messages = []
+        try:
+            # 查找消息列表区域
+            # 使用 Rust 版本的 UI 自动化，更稳定
+            msg_list = self._wechat_window.child_window(
+                class_name="RustHtmlView"
+            )
+            if msg_list.exists(timeout=2):
+                # 获取文本内容
+                texts = msg_list.texts()
+                for text in texts:
+                    if text and text.strip():
+                        messages.append(text.strip())
+        except Exception as e:
+            logger.debug(f"获取消息失败: {e}")
+        return messages
+
+    def _read_chat_messages(self) -> list:
+        """读取聊天消息列表"""
+        messages = []
+        try:
+            # 查找消息区域 - 多个可能的选择器
+            selectors = [
+                {"class_name": "RustHtmlView"},
+                {"class_name": "WebView"},
+                {"title": "消息"},
+            ]
+
+            msg_area = None
+            for sel in selectors:
+                try:
+                    msg_area = self._wechat_window.child_window(**sel)
+                    if msg_area.exists(timeout=1):
+                        break
+                except Exception:
+                    continue
+
+            if msg_area:
+                # 获取所有文本
+                all_text = msg_area.texts()
+                # 过滤出实际消息（通常是较短的文本行）
+                for text in all_text:
+                    if text and len(text) < 500 and len(text) > 0:
+                        # 简单过滤
+                        messages.append(text)
+        except Exception as e:
+            logger.debug(f"读取消息失败: {e}")
+        return messages
 
     def set_callback(self, callback: Callable):
-        """
-        设置消息回调函数
-
-        Args:
-            callback: 回调函数，签名为 (sender: str, message: str) -> None
-        """
+        """设置消息回调函数"""
         with self._callback_lock:
             self._callback = callback
 
     def _process_messages(self):
         """处理新消息"""
-        if self._wx is None:
+        if self._wechat_window is None:
             self._init_wechat()
 
-        # 获取最新消息
-        messages = self._wx.GetListenMessage()
+        try:
+            # 获取当前联系人名称
+            sender = self._get_friend_name()
+            if not sender or not is_contact(sender):
+                return
 
-        for msg in messages:
-            wx_msg = WeChatMessage(sender=msg[0], content=msg[1])
+            # 获取消息
+            messages = self._get_latest_messages()
+            for msg in messages:
+                # 避免重复处理
+                msg_hash = hash((sender, msg))
+                if msg_hash in self._seen_messages:
+                    continue
+                self._seen_messages.add(msg_hash)
 
-            # 只处理指定联系人的消息
-            if is_contact(wx_msg.sender):
                 with self._callback_lock:
                     callback = self._callback
                 if callback:
                     try:
-                        callback(wx_msg.sender, wx_msg.content)
+                        callback(sender, msg)
                     except Exception as e:
                         logger.error("处理消息失败: %s", e)
+        except Exception as e:
+            logger.error("处理消息异常: %s", e)
 
     def _listen_loop(self):
         """监听循环"""
@@ -100,6 +182,33 @@ class WeChatListener:
         if self._thread:
             self._thread.join(timeout=5)
         logger.info("微信监听已停止")
+
+    def send_message(self, text: str):
+        """发送消息"""
+        try:
+            # 查找输入框
+            input_box = self._wechat_window.child_window(
+                class_name="Edit",
+                title="Type a message"
+            )
+            if not input_box.exists():
+                # 尝试其他选择器
+                input_box = self._wechat_window.child_window(class_name="RichEdit20W")
+            if not input_box.exists():
+                input_box = self._wechat_window.child_window(class_name="Edit")
+
+            if input_box.exists():
+                input_box.set_edit_text(text)
+                # 按回车发送
+                input_box.type_keys('{ENTER}')
+                logger.info("消息已发送: %s", text[:20])
+                return True
+            else:
+                logger.error("未找到输入框")
+                return False
+        except Exception as e:
+            logger.error("发送消息失败: %s", e)
+            return False
 
 
 def test_listener():
